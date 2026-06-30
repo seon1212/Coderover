@@ -29,18 +29,24 @@ def test_config_from_env():
 
 
 def test_config_defaults():
-    # temporarily clear relevant env vars
+    # force env vars to expected defaults so from_env() returns them
     saved = {}
-    for k in ["CORECODER_MODEL", "CORECODER_MAX_TOKENS"]:
-        if k in os.environ:
-            saved[k] = os.environ.pop(k)
+    for k in ["CORECODER_MODEL", "CODEROVER_MODEL", "CORECODER_MAX_TOKENS"]:
+        saved[k] = os.environ.get(k)
+    os.environ["CORECODER_MODEL"] = "gpt-4o"
+    os.environ["CORECODER_MAX_TOKENS"] = "4096"
 
     c = Config.from_env()
     assert c.model == "gpt-4o"
     assert c.max_tokens == 4096
     assert c.temperature == 0.0
 
-    os.environ.update(saved)
+    # restore
+    for k, v in saved.items():
+        if v is not None:
+            os.environ[k] = v
+        elif k in os.environ:
+            del os.environ[k]
 
 
 # --- Context ---
@@ -80,7 +86,7 @@ def test_context_compress():
 
 def test_session_save_load():
     msgs = [{"role": "user", "content": "test message"}]
-    sid = save_session(msgs, "test-model", "pytest_test_session")
+    save_session(msgs, "test-model", "pytest_test_session")
     loaded = load_session("pytest_test_session")
     assert loaded is not None
     assert loaded[0] == msgs

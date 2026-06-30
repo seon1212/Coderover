@@ -175,8 +175,7 @@ class ContextManager:
         """Fallback: extract file paths, errors, and decisions without LLM."""
         import re
         files_seen = set()
-        errors = []
-        decisions = []
+        errors: list[str] = []
 
         for m in messages:
             text = m.get("content", "") or ""

@@ -1,12 +1,11 @@
 """Tests for the LiteLLM backend."""
 
-import json
 import types as builtin_types
 from unittest import mock
 
 import pytest
 
-from coderover.llm import LLM, LiteLLM, LLMResponse, ToolCall
+from coderover.llm import LLM, LiteLLM, LLMResponse
 from coderover.config import Config
 
 

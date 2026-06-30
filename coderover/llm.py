@@ -139,6 +139,8 @@ class LLM:
 
         for chunk in stream:
             # usage info comes in the final chunk
+
+
             if chunk.usage:
                 prompt_tok = chunk.usage.prompt_tokens
                 completion_tok = chunk.usage.completion_tokens
@@ -192,14 +194,14 @@ class LLM:
         for attempt in range(max_retries):
             try:
                 return self.client.chat.completions.create(**params)
-            except (RateLimitError, APITimeoutError, APIConnectionError) as e:
+            except (RateLimitError, APITimeoutError, APIConnectionError):
                 if attempt == max_retries - 1:
                     raise
                 wait = 2 ** attempt
                 time.sleep(wait)
             except APIError as e:
                 # 5xx = server error, retry; 4xx = client error, don't
-                if e.status_code and e.status_code >= 500 and attempt < max_retries - 1:
+                if hasattr(e, "status_code") and e.status_code and e.status_code >= 500 and attempt < max_retries - 1:
                     time.sleep(2 ** attempt)
                 else:
                     raise
