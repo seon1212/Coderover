@@ -113,6 +113,7 @@ def _run_tool(
             [executable, *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=120,
             cwd=str(repo_path),
         )
@@ -423,6 +424,11 @@ def verify(
         assert runner is not None and parser is not None  # guarded by entry is None above
 
         passed, output = runner(repo_path)
+        #测试用
+        print(f"\n===== {name} raw output =====")
+        print(output)
+        print("=============================\n")
+
         raw_outputs[name] = output
 
         if not passed and output.startswith("Error:"):
@@ -441,6 +447,11 @@ def verify(
             continue
 
         parsed = parser(output)
+        #测试用
+        print(f"{name}: passed={passed}, parsed_errors={len(parsed)}")
+        for e in parsed:
+            print(e)
+
         all_errors.extend(parsed)
         tool_results.append((name, passed and len(parsed) == 0, output))
 

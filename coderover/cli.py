@@ -13,9 +13,12 @@ from prompt_toolkit.key_binding import KeyBindings
 
 from .agent import Agent
 from .llm import LLM, LiteLLM
+from .tools import ALL_TOOLS
 from .config import Config
 from .session import save_session, load_session, list_sessions
 from . import __version__
+
+
 
 console = Console()
 
@@ -31,12 +34,82 @@ def _parse_args():
     p.add_argument("-p", "--prompt", help="One-shot prompt (non-interactive mode)")
     p.add_argument("-r", "--resume", metavar="ID", help="Resume a saved session")
     p.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
+
+    #以下是为了测试harness功能，调试用
+    subparsers = p.add_subparsers(dest="command", help="Available commands")
+    th_parser = subparsers.add_parser("test-harness", help="Run Harness in a test target")
+    th_parser.add_argument("-t", "--target", default="tests/test_target", help="Target directory to fix")
+    th_parser.add_argument("--task", default="修复失败的测试", help="Task description")
+    th_parser.add_argument("--max-retries", type=int, default=3, help="Maximum retry attempts")
+
     return p.parse_args()
 
+
+def _run_test_harness(args):
+    """执行 Harness 闭环测试"""
+    from pathlib import Path
+    from coderover.core.harness import AdaptiveHarness
+    from coderover.llm import LLM
+    from coderover.tools import ALL_TOOLS
+    from coderover.config import Config
+
+    # 1. 从环境变量加载配置
+    config = Config.from_env()
+
+    # 2. 命令行参数覆盖（如果用户指定了 -m 等）
+    if args.model:
+        config.model = args.model
+    if args.base_url:
+        config.base_url = args.base_url
+    if args.api_key:
+        config.api_key = args.api_key
+
+    # 3. 安全检查
+    if not config.model:
+        print(" 错误：未指定模型。请在 .env 中设置 CORECODER_MODEL，或使用 -m 参数指定。")
+        return
+
+    target = Path(args.target).resolve()
+    if not target.exists():
+        print(f" 目标路径不存在: {target}")
+        return
+
+    print(f" 开始 Harness 测试，目标: {target}")
+    print(f" 使用模型: {config.model}")
+    print("=" * 60)
+
+    # 4. 创建 LLM 和 Harness
+    llm = LLM(
+        model=config.model,
+        api_key=config.api_key,
+        base_url=config.base_url,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+    )
+    harness = AdaptiveHarness(llm, ALL_TOOLS, max_retries=args.max_retries)
+
+    result = harness.run(
+        task=args.task,
+        repo_path=str(target)
+    )
+
+    print("=" * 60)
+    print(f" 状态: {result['status']}")
+    print(f" 尝试次数: {result.get('attempts', 0)}")
+    if result.get('result'):
+        v = result['result']
+        print(f" 剩余错误数: {len(v.errors) if hasattr(v, 'errors') else 0}")
 
 def main():
     args = _parse_args()
     config = Config.from_env()
+
+    # ============ 分支 1：测试harness ============
+    if hasattr(args, "command") and args.command:
+        if args.command == "test-harness":
+            _run_test_harness(args)
+            return
+    # ============   ============   ============
 
     # CLI args override env vars
     if args.model:
