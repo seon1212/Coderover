@@ -41,6 +41,7 @@ def _parse_args():
     th_parser.add_argument("-t", "--target", default="tests/test_target", help="Target directory to fix")
     th_parser.add_argument("--task", default="修复失败的测试", help="Task description")
     th_parser.add_argument("--max-retries", type=int, default=3, help="Maximum retry attempts")
+    th_parser.add_argument("--aggressive", action="store_true", help="强制修复所有错误（包括低危警告，如 ruff、var-annotated）")
 
     return p.parse_args()
 
@@ -86,7 +87,7 @@ def _run_test_harness(args):
         temperature=config.temperature,
         max_tokens=config.max_tokens,
     )
-    harness = AdaptiveHarness(llm, ALL_TOOLS, max_retries=args.max_retries)
+    harness = AdaptiveHarness(llm, ALL_TOOLS, max_retries=args.max_retries, aggressive=args.aggressive)
 
     result = harness.run(
         task=args.task,
@@ -99,6 +100,7 @@ def _run_test_harness(args):
     if result.get('result'):
         v = result['result']
         print(f" 剩余错误数: {len(v.errors) if hasattr(v, 'errors') else 0}")
+    print(harness._generate_report(result))
 
 def main():
     args = _parse_args()
@@ -329,3 +331,4 @@ def _show_help():
 def _brief(kwargs: dict, maxlen: int = 80) -> str:
     s = ", ".join(f"{k}={repr(v)[:40]}" for k, v in kwargs.items())
     return s[:maxlen] + ("..." if len(s) > maxlen else "")
+

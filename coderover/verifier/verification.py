@@ -425,9 +425,9 @@ def verify(
 
         passed, output = runner(repo_path)
         #测试用
-        print(f"\n===== {name} raw output =====")
-        print(output)
-        print("=============================\n")
+        #print(f"\n===== {name} raw output =====")
+        #print(output)
+        #print("=============================\n")
 
         raw_outputs[name] = output
 
@@ -448,9 +448,9 @@ def verify(
 
         parsed = parser(output)
         #测试用
-        print(f"{name}: passed={passed}, parsed_errors={len(parsed)}")
-        for e in parsed:
-            print(e)
+        #print(f"{name}: passed={passed}, parsed_errors={len(parsed)}")
+        #for e in parsed:
+        #   print(e)
 
         all_errors.extend(parsed)
         tool_results.append((name, passed and len(parsed) == 0, output))
