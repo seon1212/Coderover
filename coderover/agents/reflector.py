@@ -203,6 +203,9 @@ Error information:
 Code context:
 {code_context}
 
+Similar successful fixes from the past:
+{extra_context}
+
 Remember: Output ONLY the JSON, no markdown, no explanations."""
 
 
@@ -271,7 +274,8 @@ def _create_fallback_result(error: Any) -> ReflectorResult:
 
 
 def reflect(
-    error_summary: List[Any], repo_path: Path | str, config: Config | None = None
+    error_summary: List[Any], repo_path: Path | str,
+    config: Config | None = None, extra_context: str = ""
 ) -> ReflectorResult:
     """Analyze errors and generate fix plans.
 
@@ -357,7 +361,8 @@ def reflect(
 
     # Prepare the prompt
     prompt = _SYSTEM_PROMPT.format(
-        error_summary=error_text, code_context=code_context
+        error_summary=error_text, code_context=code_context,
+        extra_context=extra_context
     )
 
     # Call the LLM
@@ -375,16 +380,7 @@ def reflect(
     except Exception as e:
         return _create_fallback_result(e)
 
-    """
-    # 测试用，一会删除在调用 llm.chat 之后
-    print(f"[DEBUG] LLM response content: {repr(response.content)}")
-    print(f"[DEBUG] LLM response content length: {len(response.content)}")
-
-    # 在 _parse_llm_response 之后
-    parsed = _parse_llm_response(response.content)
-    print(f"[DEBUG] Parsed LLM response: {json.dumps(parsed, indent=2)}")
-    #删除这里以上
-    """
+    
     # Parse the LLM response
     parsed = _parse_llm_response(content)
 

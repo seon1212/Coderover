@@ -51,7 +51,7 @@ class AdaptiveHarness:
     # -----------------------------------------------------------------------
     # Public entry
     # -----------------------------------------------------------------------
-    def run(self, task: str, repo_path: str) -> Dict[str, Any]:
+    def run(self, task: str, repo_path: Path | str) -> Dict[str, Any]:
         repo_path = Path(repo_path).resolve()
         history: List[List[str]] = []
         actual_attempts = 0
@@ -73,7 +73,7 @@ class AdaptiveHarness:
         self._phase_end(actual_attempts)
 
         for attempt in range(1, self.max_retries + 1):
-            verify_result = verify(repo_path)
+            verify_result = verify(str(repo_path))
             self._render_verification(verify_result)
 
             # Case 1: everything passed
@@ -115,7 +115,37 @@ class AdaptiveHarness:
                 f"{len(severe_errors)} severe error(s) "
                 f"({skipped_count} low-severity skipped)",
             )
-            reflector_result = reflect(severe_errors, repo_path)
+            #reflector_result = reflect(severe_errors, repo_path)
+
+            from coderover.memory import FailureLibrary, OUTCOME_SUCCESS
+
+            # 检索相似的成功案例
+            lib = FailureLibrary()
+            similar_cases = lib.find_similar(
+                severe_errors,
+                top_k=3,
+                same_outcome=OUTCOME_SUCCESS   # 只取成功案例
+            )
+
+            extra_context = ""
+            if similar_cases:
+                lines = []
+                for i, case in enumerate(similar_cases, 1):
+                    lines.append(f"--- Previous successful fix #{i} ---")
+                    lines.append(f"Root cause: {case.root_cause}")
+                    if case.fix_plan:
+                        lines.append(f"Fix plan: {case.fix_plan.explanation}")
+                    lines.append(f"Outcome: {case.outcome}")
+                    lines.append("")
+                extra_context = "\n".join(lines)
+
+            # 调用 Reflector，传入 extra_context
+            reflector_result = reflect(
+                severe_errors,
+                repo_path,
+                extra_context=extra_context
+            )
+
             self._render_reflector(reflector_result)
 
             # Low confidence -> refuse to act on shaky plan
@@ -141,7 +171,7 @@ class AdaptiveHarness:
     # -----------------------------------------------------------------------
     # Output helpers — all ASCII-safe
     # -----------------------------------------------------------------------
-    def _header(self, repo_path: Path) -> None:
+    def _header(self, repo_path: Path | str) -> None:
         print()
         print(BANNER)
         print("  CodeRover Adaptive Harness")

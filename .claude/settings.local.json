@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_symbol_index.py -v)",
+      "Bash(python -m pytest tests/test_failure_library.py -v)",
+      "Bash(python -m pytest tests/)"
+    ]
+  }
+}

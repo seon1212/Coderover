@@ -55,7 +55,7 @@ class BashTool(Tool):
         # safety check
         warning = _check_dangerous(command)
         if warning:
-            return f"⚠ Blocked: {warning}\nCommand: {command}\nIf intentional, modify the command to be more specific."
+            return f"[BLOCKED] {warning}\nCommand: {command}\nIf intentional, modify the command to be more specific."
 
         # use tracked working directory
         cwd = _cwd or os.getcwd()
@@ -66,6 +66,8 @@ class BashTool(Tool):
                 shell=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 cwd=cwd,
             )

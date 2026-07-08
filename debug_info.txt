@@ -1,0 +1,15 @@
+reflect() at byte 8062
+def reflect(
+    error_summary: List[Any], repo_path: Path | str, config: Config | None = None
+) -> ReflectorResult:
+    """Analyze errors and gene
+prompt.format at byte 10870
+prompt = _SYSTEM_PROMPT.format(
+        error_summary=error_text, code_context=code_context
+    )
+
+    # Call the LLM
+    try:
+        response = llm.chat(
+            messages=[
+             

@@ -7,6 +7,7 @@ from .edit import EditFileTool
 from .glob_tool import GlobTool
 from .grep import GrepTool
 from .agent import AgentTool
+from .symbol_index import SymbolIndexTool
 
 ALL_TOOLS = [
     BashTool(),
@@ -16,12 +17,14 @@ ALL_TOOLS = [
     GlobTool(),
     GrepTool(),
     AgentTool(),
+    SymbolIndexTool(),
 ]
 
 
-def get_tool(name: str):
+def get_tool(name: str) -> "Tool | None":
     """Look up a tool by name."""
+    from .base import Tool
     for t in ALL_TOOLS:
-        if t.name == name:
+        if isinstance(t, Tool) and t.name == name:
             return t
     return None
