@@ -27,6 +27,8 @@ from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 from tree_sitter_language_pack import get_parser
 
+from .base import Tool
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -627,7 +629,7 @@ def render_callees(qualified: str, callees: List[str]) -> str:
     return f"{qualified!r} calls: " + ", ".join(callees)
 
 
-class SymbolIndexTool:
+class SymbolIndexTool(Tool):
     """Tool for the Agent — answers questions about Python symbols.
 
     The tool wraps a process-global :class:`SymbolIndex` keyed off ``path``.

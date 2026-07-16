@@ -46,23 +46,40 @@ class Agent:
 
     def chat(self, user_input: str, on_token=None, on_tool=None) -> str:
         """Process one user message. May involve multiple LLM/tool rounds."""
+        import time as _time
         self.messages.append({"role": "user", "content": user_input})
         self.context.maybe_compress(self.messages, self.llm)
 
-        for _ in range(self.max_rounds):
+        llm_calls = 0
+        tool_calls_total = 0
+
+        for round_idx in range(self.max_rounds):
+            round_start = _time.monotonic()
+            llm_calls += 1
             resp = self.llm.chat(
                 messages=self._full_messages(),
                 tools=self._tool_schemas(),
                 on_token=on_token,
             )
+            llm_time = _time.monotonic() - round_start
 
             # no tool calls -> LLM is done, return text
             if not resp.tool_calls:
+                content_preview = (resp.content or "")[:60].encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+                print(f"  [DEBUG] Round {round_idx+1}/{self.max_rounds}: LLM={llm_time:.1f}s text='{content_preview}'")
+                print(f"  [DEBUG] Total: LLM calls={llm_calls}, tool calls={tool_calls_total}")
                 self.messages.append(resp.message)
+                # 空内容 → 不是 LLM 说完了，是推理失败，继续下一轮
+                if not resp.content and round_idx < self.max_rounds - 1:
+                    print(f"  [DEBUG] Empty response, continuing...")
+                    self.messages.append({"role": "user", "content": "Continue. If you understand the task, start working."})
+                    continue
                 return resp.content
 
-            # tool calls -> execute (parallel when multiple, like Claude Code's
-            # StreamingToolExecutor which runs independent tools concurrently)
+            print(f"  [DEBUG] Round {round_idx+1}/{self.max_rounds}: LLM={llm_time:.1f}s tools={len(resp.tool_calls)}")
+            tool_calls_total += len(resp.tool_calls)
+
+            # tool calls -> execute (parallel when multiple)
             self.messages.append(resp.message)
 
             if len(resp.tool_calls) == 1:
