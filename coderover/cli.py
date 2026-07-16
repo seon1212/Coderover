@@ -49,8 +49,9 @@ def _parse_args():
 
     # --- run (production entry) ---
     run_parser = subparsers.add_parser("run", help="Run CodeRover on a repository")
-    run_parser.add_argument("--repo", required=True, help="Path to the repository to fix")
-    run_parser.add_argument("--task", default="修复代码中的问题", help="Task description")
+    run_parser.add_argument("--repo", required=False, help="Path to the repository to fix")
+    run_parser.add_argument("--issue", help="GitHub Issue URL (e.g. https://github.com/owner/repo/issues/42)")
+    run_parser.add_argument("--task", default="修复代码中的问题", help="Task description (ignored when --issue is used)")
     run_parser.add_argument("--max-retries", type=int, default=3, help="Maximum retry attempts")
     run_parser.add_argument("--aggressive", action="store_true", help="Fix all errors including low-severity warnings")
     run_parser.add_argument("--json-output", action="store_true", help="Output result as JSON (for CI integration)")
@@ -68,6 +69,7 @@ def _run_harness_task(
     max_retries: int,
     aggressive: bool,
     pr: bool,
+    is_issue_task: bool = False,
     model: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
@@ -78,6 +80,8 @@ def _run_harness_task(
     from coderover.llm import LLM
     from coderover.tools import ALL_TOOLS
     from coderover.config import Config
+
+    #print(f"[INFO] Task ({len(task)} chars): {task[:200]}...")
 
     # 1. Load config from env
     config = Config.from_env()
@@ -116,7 +120,7 @@ def _run_harness_task(
     harness = AdaptiveHarness(llm, ALL_TOOLS, max_retries=max_retries, aggressive=aggressive)
 
     # 5. Execute
-    result = harness.run(task=task, repo_path=str(target))
+    result = harness.run(task=task, repo_path=str(target), is_issue_task=is_issue_task)
 
     # 6. Auto-create PR on success
     if pr and result.get("status") == "success":
@@ -176,6 +180,90 @@ def _run_test_harness(args):
     if result.get("pr_url"):
         print(f" PR URL: {result['pr_url']}")
 
+def _build_task_from_issue(issue_data: dict) -> str:
+    """Construct a natural-language task description from a GitHub Issue.
+
+    Args:
+        issue_data: Dict with at least ``title``, ``body``, and ``html_url`` keys.
+
+    Returns:
+        A formatted prompt for the Agent.
+    """
+    title = issue_data.get("title", "Untitled Issue")
+    body = issue_data.get("body", "(no description)")
+    url = issue_data.get("html_url", "")
+
+    lines = [
+        f"Please fix the following GitHub Issue:",
+        f"",
+        f"Title: {title}",
+        f"Issue URL: {url}",
+        f"",
+        f"Description:",
+        f"{body}",
+        f"",
+        f"Analyze the root cause, locate the relevant code, generate a fix plan,",
+        f"apply the changes, and ensure all tests pass after the fix.",
+    ]
+    return "\n".join(lines)
+
+
+def _render_behavior_report(action_log: list) -> None:
+    """Print a summary of what the Agent did during the run.
+
+    Shows tool call counts, files edited/written, and notable bash commands.
+    """
+    if not action_log:
+        return
+
+    by_tool: dict[str, int] = {}
+    edited_files: set[str] = set()
+    written_files: set[str] = set()
+    run_commands: list[str] = []
+    read_files: int = 0
+
+    for entry in action_log:
+        tool = entry.get("tool", "?")
+        by_tool[tool] = by_tool.get(tool, 0) + 1
+        args = entry.get("args", {})
+        if tool == "edit_file":
+            fp = args.get("file_path", "")
+            if fp:
+                edited_files.add(str(fp))
+        elif tool == "write_file":
+            fp = args.get("file_path", "")
+            if fp:
+                written_files.add(str(fp))
+        elif tool == "bash":
+            cmd = args.get("command", "")
+            if cmd and len(cmd) < 100:
+                run_commands.append(cmd.strip())
+        elif tool == "read_file":
+            read_files += 1
+
+    print()
+    print(BANNER)
+    print("  Agent Behavior Report")
+    print(f"  Total tool calls: {sum(by_tool.values())}")
+    parts = [f"    {tool}: {count}" for tool, count in sorted(by_tool.items())]
+    for p in parts:
+        print(p)
+    if edited_files:
+        print(f"  Files edited ({len(edited_files)}):")
+        for f in sorted(edited_files):
+            print(f"    - {f}")
+    if written_files:
+        print(f"  Files created ({len(written_files)}):")
+        for f in sorted(written_files):
+            print(f"    - {f}")
+    if run_commands:
+        print(f"  Bash commands ({len(run_commands)}):")
+        for c in run_commands[:8]:
+            short = c[:120] + ("..." if len(c) > 120 else "")
+            print(f"    $ {short}")
+    print(BANNER)
+
+
 def main():
     args = _parse_args()
     config = Config.from_env()
@@ -183,12 +271,41 @@ def main():
     # ============ 分支 1：run（生产入口） ============
     if hasattr(args, "command") and args.command:
         if args.command == "run":
+            repo_path = args.repo
+            task = args.task
+
+            # --issue 模式：从 GitHub API 获取 Issue 内容作为任务描述
+            is_issue_task = bool(args.issue)
+            if args.issue:
+                if not repo_path:
+                    print("  [FAIL] --repo is required when using --issue.")
+                    return
+                try:
+                    from coderover.tools.github_client import GitHubClient, parse_issue_url
+                    # Validate URL first (cheap, no network)
+                    owner, repo_name, issue_num = parse_issue_url(args.issue)
+                    print(f"  Fetching issue {owner}/{repo_name}#{issue_num} ...")
+                    client = GitHubClient()
+                    issue_data = client.get_issue(args.issue)
+                    task = _build_task_from_issue(issue_data)
+                    print(f"  Issue: {issue_data['title']} ({issue_data['state']})")
+                    print(f"  Using repo: {repo_path}")
+                except Exception as exc:
+                    print(f"  [FAIL] Failed to fetch issue: {exc}")
+                    return
+
+            # Validate repo_path is provided
+            if not repo_path:
+                print("  [FAIL] --repo is required for run command.")
+                return
+
             result = _run_harness_task(
-                repo_path=args.repo,
-                task=args.task,
+                repo_path=repo_path,
+                task=task,
                 max_retries=args.max_retries,
                 aggressive=args.aggressive,
                 pr=args.pr,
+                is_issue_task=is_issue_task,
                 model=args.model,
                 base_url=args.base_url,
                 api_key=args.api_key,
@@ -214,21 +331,40 @@ def main():
                     ]
                 print(json.dumps(json_payload, indent=2, default=str))
             else:
+                status = result['status']
+                usage = result.get("usage", {})
+                elapsed = usage.get("elapsed_seconds", 0)
+                pt = usage.get("prompt_tokens", 0)
+                ct = usage.get("completion_tokens", 0)
+                cost = usage.get("estimated_cost")
+
                 print(BANNER)
-                print(f" Status: {result['status']}")
+                if status == "skipped":
+                    print(f" Status: skipped — no issues found, no modifications needed")
+                else:
+                    print(f" Status: {status}")
                 print(f" Attempts: {result.get('attempts', 0)}")
-                if result.get("modified_files"):
-                    print(f" Modified files ({len(result['modified_files'])}):")
-                    for f in result["modified_files"]:
+                print(f" Time: {elapsed}s")
+                if pt or ct:
+                    tokens_line = f" Tokens: {pt} prompt + {ct} completion = {pt + ct} total"
+                    if cost is not None:
+                        tokens_line += f"  (${cost:.4f})"
+                    print(tokens_line)
+                modified = result.get("modified_files", [])
+                if modified:
+                    print(f" Modified files ({len(modified)}):")
+                    for f in modified:
                         print(f"  - {f}")
                 v = result.get("result")
                 if v is not None:
                     errors = getattr(v, "errors", [])
-                    print(f" Remaining errors: {len(errors)}")
-                    for e in errors[:5]:
-                        print(f"    [{e.tool}] {e.file}:{e.line}  {e.message[:80]}")
+                    if errors:
+                        print(f" Remaining errors: {len(errors)}")
+                        for e in errors[:5]:
+                            print(f"    [{e.tool}] {e.file}:{e.line}  {e.message[:80]}")
                 if result.get("pr_url"):
                     print(f" PR: {result['pr_url']}")
+                _render_behavior_report(result.get("action_log", []))
             return
 
         # ============ 分支 2：测试harness ============

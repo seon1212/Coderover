@@ -380,7 +380,7 @@ _TOOL_REGISTRY: Dict[str, Tuple[Callable, Callable]] = {
 
 
 def verify(
-    repo_path: Path,
+    repo_path: Path | str,
     tools: Optional[List[str]] = None,
 ) -> VerifierResult:
     """Run verification tools sequentially and aggregate results.
@@ -406,7 +406,7 @@ def verify(
     for name in tools:
         entry = _TOOL_REGISTRY.get(name)
         if entry is None:
-            msg = f"Error: unknown tool '{name}' — supported: pytest, mypy, ruff"
+            msg = f"Error: unknown tool '{name}' - supported: pytest, mypy, ruff"
             all_errors.append(
                 VerifierError(
                     tool=name,
@@ -425,10 +425,6 @@ def verify(
         assert runner is not None and parser is not None  # guarded by entry is None above
 
         passed, output = runner(repo_path)
-        #测试用
-        #print(f"\n===== {name} raw output =====")
-        #print(output)
-        #print("=============================\n")
 
         raw_outputs[name] = output
 
@@ -448,10 +444,6 @@ def verify(
             continue
 
         parsed = parser(output)
-        #测试用
-        #print(f"{name}: passed={passed}, parsed_errors={len(parsed)}")
-        #for e in parsed:
-        #   print(e)
 
         all_errors.extend(parsed)
         tool_results.append((name, passed and len(parsed) == 0, output))

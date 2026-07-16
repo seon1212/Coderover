@@ -1,5 +1,6 @@
 """Tool registry."""
 
+from .base import Tool
 from .bash import BashTool
 from .read import ReadFileTool
 from .write import WriteFileTool
@@ -9,7 +10,7 @@ from .grep import GrepTool
 from .agent import AgentTool
 from .symbol_index import SymbolIndexTool
 
-ALL_TOOLS = [
+ALL_TOOLS: list[Tool] = [
     BashTool(),
     ReadFileTool(),
     WriteFileTool(),
@@ -21,10 +22,9 @@ ALL_TOOLS = [
 ]
 
 
-def get_tool(name: str) -> "Tool | None":
+def get_tool(name: str) -> Tool | None:
     """Look up a tool by name."""
-    from .base import Tool
     for t in ALL_TOOLS:
-        if isinstance(t, Tool) and t.name == name:
+        if t.name == name:
             return t
     return None

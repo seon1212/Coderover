@@ -1,15 +1,22 @@
-"""GitHub REST API client — create Pull Requests from CodeRover results."""
+"""GitHub REST API client — create Pull Requests and read Issues."""
 
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 
 
 API_BASE = "https://api.github.com"
 _ENV_TOKEN = "GITHUB_TOKEN"
+
+# GitHub Issue URL pattern:
+#   https://github.com/{owner}/{repo}/issues/{number}
+_ISSUE_URL_RE = re.compile(
+    r"^https?://github\.com/([^/]+)/([^/]+)/issues/(\d+)\s*$"
+)
 
 
 class GitHubClient:
@@ -86,3 +93,64 @@ class GitHubClient:
             raise ValueError(f"GitHub API error (422): {detail[0]['message']}")
         resp.raise_for_status()
         return resp.json()
+
+    # ------------------------------------------------------------------
+    # Issue API
+    # ------------------------------------------------------------------
+    def get_issue(self, issue_url: str) -> Dict[str, Any]:
+        """Fetch a GitHub Issue by URL.
+
+        Args:
+            issue_url: Full URL like ``https://github.com/owner/repo/issues/42``.
+
+        Returns:
+            A dict with at least ``title``, ``body``, ``html_url``, ``number``,
+            and ``state`` keys.
+
+        Raises:
+            ValueError: URL format is invalid.
+            requests.RequestException: Network / API error.
+        """
+        owner, repo, number = parse_issue_url(issue_url)
+        url = f"{API_BASE}/repos/{owner}/{repo}/issues/{number}"
+        resp = self.session.get(url)
+        if resp.status_code == 404:
+            raise ValueError(
+                f"Issue not found: {owner}/{repo}#{number}. "
+                "Check that the URL and repository are correct."
+            )
+        if resp.status_code == 403:
+            raise ValueError(
+                f"GitHub API rate limit (403). "
+                f"Set the {_ENV_TOKEN} environment variable for a higher limit."
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "title": data.get("title", ""),
+            "body": data.get("body", "") or "",
+            "html_url": data.get("html_url", issue_url),
+            "number": data.get("number", number),
+            "state": data.get("state", "open"),
+        }
+
+
+def parse_issue_url(url: str) -> Tuple[str, str, int]:
+    """Parse a GitHub Issue URL into ``(owner, repo, issue_number)``.
+
+    Args:
+        url: Full URL like ``https://github.com/owner/repo/issues/42``.
+
+    Returns:
+        ``(owner, repo, issue_number)``.
+
+    Raises:
+        ValueError: If the URL does not match the expected pattern.
+    """
+    m = _ISSUE_URL_RE.match(url.strip())
+    if not m:
+        raise ValueError(
+            f"Invalid GitHub Issue URL: {url!r}\n"
+            "Expected format: https://github.com/{owner}/{repo}/issues/{number}"
+        )
+    return m.group(1), m.group(2), int(m.group(3))

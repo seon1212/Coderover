@@ -44,6 +44,14 @@ dev = ["pytest>=7.0"]
 [project.scripts]
 coderover = "coderover.cli:main"
 
+[tool.mypy]
+# All Tool subclasses use explicit execute() parameters for LLM function-calling
+# schemas, which intentionally differ from the base class's **kwargs signature.
+disable_error_code = "override"
+
+[tool.ruff.lint]
+ignore = ["E501"]  # Allow long lines (e.g. URLs, f-strings)
+
 [project.urls]
 Homepage = "https://github.com/he-yufeng/CoreCoder"
 Repository = "https://github.com/he-yufeng/CoreCoder"
